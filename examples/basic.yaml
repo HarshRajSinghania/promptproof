@@ -1,0 +1,66 @@
+# PromptProof example suite — a sentiment-classification prompt.
+#
+# Run it offline (no API key) with:
+#   promptproof run examples/basic.yaml --mock
+#
+# Run it for real with:
+#   export OPENAI_API_KEY=sk-...
+#   promptproof run examples/basic.yaml
+
+name: sentiment-classifier
+
+model:
+  base_url: https://api.openai.com/v1
+  name: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+  temperature: 0
+
+prompt: |
+  Classify the sentiment of the following product review as positive,
+  negative, or neutral. Respond with a JSON object only, for example
+  {"sentiment": "positive"}.
+
+  Review: {{review}}
+
+# Offline behaviour for --mock runs. Rules are matched against the rendered
+# prompt (substring, or /regex/), first match wins; `default` is the
+# fallback. A case may also set its own `mock_response`.
+mock:
+  default: '{"sentiment": "neutral"}'
+  rules:
+    - match: "absolutely loved"
+      response: '{"sentiment": "positive"}'
+    - match: "broke after"
+      response: '{"sentiment": "negative"}'
+
+cases:
+  - name: glowing review
+    vars:
+      review: "I absolutely loved this keyboard — best purchase of the year."
+    assertions:
+      - contains: '"positive"'
+      - max_chars: 100
+      - json_schema:
+          type: object
+          required: [sentiment]
+          properties:
+            sentiment:
+              type: string
+              enum: [positive, negative, neutral]
+
+  - name: angry review
+    vars:
+      review: "It broke after two days and support never replied."
+    assertions:
+      - contains: '"negative"'
+      - not_contains: '"positive"'
+      - regex: '"sentiment":\s*"negative"'
+
+  - name: factual review
+    vars:
+      review: "It arrived on Tuesday. It is a keyboard."
+    assertions:
+      - contains: '"neutral"'
+      - json_schema:
+          type: object
+          required: [sentiment]

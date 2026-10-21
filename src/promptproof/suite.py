@@ -1,0 +1,125 @@
+"""Suite file loading (YAML or JSON).
+
+A suite file looks like::
+
+    name: sentiment-classifier
+    model:
+      base_url: https://api.openai.com/v1
+      name: gpt-4o-mini
+      api_key_env: OPENAI_API_KEY
+    prompt: |
+      Classify the sentiment of this review: {{review}}
+    mock:
+      default: '{"sentiment": "neutral"}'
+      rules:
+        - match: "loved"
+          response: '{"sentiment": "positive"}'
+    cases:
+      - name: glowing review
+        vars: {review: "I loved it"}
+        assertions:
+          - contains: positive
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .errors import PromptProofError
+from .providers import MockConfig
+
+
+@dataclass
+class ModelConfig:
+    base_url: str = "https://api.openai.com/v1"
+    name: str = "gpt-4o-mini"
+    api_key_env: str = "OPENAI_API_KEY"
+    temperature: float = 0.0
+
+
+@dataclass
+class Case:
+    name: str
+    vars: dict[str, Any] = field(default_factory=dict)
+    assertions: list[Any] = field(default_factory=list)
+    mock_response: str | None = None
+
+
+@dataclass
+class Suite:
+    name: str
+    prompt: str
+    model: ModelConfig = field(default_factory=ModelConfig)
+    mock: MockConfig = field(default_factory=MockConfig)
+    cases: list[Case] = field(default_factory=list)
+    source: str = ""
+
+
+def _load_raw(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        data = json.loads(text)
+    else:
+        try:
+            import yaml
+        except ImportError as exc:  # pragma: no cover - dependency declared
+            raise PromptProofError("PyYAML is required to read YAML suites") from exc
+        data = yaml.safe_load(text)
+    if not isinstance(data, dict):
+        raise PromptProofError(f"suite file {path} must contain a mapping at the top level")
+    return data
+
+
+def load_suite(path: str | Path) -> Suite:
+    """Load and validate a suite file from *path*."""
+    suite_path = Path(path)
+    if not suite_path.exists():
+        raise PromptProofError(f"suite file not found: {suite_path}")
+    raw = _load_raw(suite_path)
+
+    if "prompt" not in raw:
+        raise PromptProofError(f"suite {suite_path} is missing the required 'prompt' field")
+    raw_cases = raw.get("cases")
+    if not isinstance(raw_cases, list) or not raw_cases:
+        raise PromptProofError(f"suite {suite_path} must define at least one case")
+
+    model_raw = raw.get("model") or {}
+    model = ModelConfig(
+        base_url=str(model_raw.get("base_url", ModelConfig.base_url)),
+        name=str(model_raw.get("name", ModelConfig.name)),
+        api_key_env=str(model_raw.get("api_key_env", ModelConfig.api_key_env)),
+        temperature=float(model_raw.get("temperature", 0.0)),
+    )
+
+    mock_raw = raw.get("mock") or {}
+    mock = MockConfig(
+        default=str(mock_raw.get("default", "")),
+        rules=[dict(rule) for rule in mock_raw.get("rules", [])],
+    )
+
+    cases: list[Case] = []
+    for index, raw_case in enumerate(raw_cases):
+        if not isinstance(raw_case, dict):
+            raise PromptProofError(f"case #{index + 1} in {suite_path} must be a mapping")
+        cases.append(
+            Case(
+                name=str(raw_case.get("name", f"case-{index + 1}")),
+                vars=dict(raw_case.get("vars", {})),
+                assertions=list(raw_case.get("assertions", [])),
+                mock_response=(
+                    str(raw_case["mock_response"]) if "mock_response" in raw_case else None
+                ),
+            )
+        )
+
+    return Suite(
+        name=str(raw.get("name", suite_path.stem)),
+        prompt=str(raw["prompt"]),
+        model=model,
+        mock=mock,
+        cases=cases,
+        source=str(suite_path),
+    )

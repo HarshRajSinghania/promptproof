@@ -1,0 +1,35 @@
+# Second example: a headline-writing prompt.
+# Demonstrates per-case `mock_response` overrides (instead of suite rules).
+#
+#   promptproof run examples/headlines.yaml --mock
+
+name: changelog-headlines
+
+model:
+  base_url: https://api.openai.com/v1
+  name: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+
+prompt: |
+  Write a single short headline (at most 12 words, no period at the end)
+  summarizing this changelog entry for end users:
+
+  {{entry}}
+
+cases:
+  - name: dark mode launch
+    vars:
+      entry: "Added a dark mode toggle to the settings page on all platforms."
+    mock_response: "Dark mode arrives in Settings on every platform"
+    assertions:
+      - contains: "Dark mode"
+      - not_contains: "."
+      - max_chars: 80
+
+  - name: api deprecation
+    vars:
+      entry: "The v1 export endpoint will stop working on March 1; use v2."
+    mock_response: "v1 export endpoint retires March 1 — move to v2"
+    assertions:
+      - regex: "v2"
+      - not_contains: "deprecated endpoint will stop working on March 1; use"
