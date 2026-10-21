@@ -34,7 +34,10 @@ PromptProof treats a prompt the way unit tests treat a function:
 - **Suites are files.** Prompts, variables and expectations live in YAML/JSON
   next to your code, reviewed in pull requests like everything else.
 - **Assertions, not vibes.** `contains`, `regex`, `json_schema`, `max_chars`
-  — deterministic checks that mean the same thing on every run.
+  — deterministic checks that mean the same thing on every run. For the
+  things patterns can't judge (tone, helpfulness, "did it actually answer
+  the question?"), an `llm_judge` assertion lets a second model grade the
+  response against a criterion you state in plain language.
 - **Built for CI.** Plain-text table for humans, JSON report for machines,
   exit code `1` when any case fails so GitHub Actions turns red.
 - **No key needed to try it.** A built-in mock provider runs any suite
@@ -116,12 +119,44 @@ case. Suites can also be plain JSON (same structure).
 | `regex`        | `regex: '"id":\s*\d+'`                    | the pattern matches somewhere in the response            |
 | `json_schema`  | `json_schema: {type: object, required: [sentiment]}` | the response parses as JSON and validates against the schema |
 | `max_chars`    | `max_chars: 500`                          | the response is at most N characters                     |
+| `llm_judge`    | `llm_judge: "the response is polite"`     | a judge model decides the response meets the criterion  |
 
 `json_schema` uses a small built-in validator covering the subset prompt
 tests actually use — `type`, `required`, `properties`, `items`, `enum`,
 `minimum`/`maximum`, `minLength`/`maxLength`, `pattern` — so PromptProof
 needs no heavy dependencies. Assertions may also be written in the explicit
 form `{type: contains, value: "x"}`.
+
+### `llm_judge`: grading with a second model
+
+Some expectations can't be a pattern: *the tone is friendly*, *the answer
+addresses the question that was asked*, *no medical advice is given*. State
+them as a criterion and let a judge model grade the response:
+
+```yaml
+cases:
+  - name: support reply
+    assertions:
+      - llm_judge: "the response is polite and actually answers the question"
+      # mapping form, with a per-assertion model override:
+      - llm_judge: {criterion: "the response gives no medical advice", model: gpt-4o}
+```
+
+The judge endpoint is configured with environment variables only (keys
+never go in suite files):
+
+```bash
+export PROMPTPROOF_JUDGE_BASE_URL=https://api.openai.com/v1  # any compatible endpoint
+export PROMPTPROOF_JUDGE_MODEL=gpt-4o-mini
+export PROMPTPROOF_JUDGE_API_KEY=sk-...
+```
+
+The judge's verdict and its one-sentence reason land in the report like any
+other assertion (`"judge: polite and on-topic"`). If the endpoint is **not**
+configured, `llm_judge` assertions report as *skipped* instead of failing —
+suites keep running offline, under `--mock`, and in CI without secrets. A
+configured judge that errors or answers unparseably fails the assertion
+with the reason shown; it never crashes the run.
 
 ## GitHub Actions
 
@@ -140,8 +175,6 @@ spending tokens or requiring secrets from forks.
 
 ## Roadmap
 
-- `llm_judge` assertion — a second model grading free-form responses
-  (interface reserved; deliberately not faked in v0.1)
 - Golden-file snapshots: record real responses once, diff against them later
 - Multi-turn conversation suites
 - Cost budgets per suite (`max_tokens` / `max_usd` gates)

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Union
 
 from .assertions import AssertionResult, check_assertions
+from .judge import LLMJudge
 from .providers import MockProvider, OpenAICompatibleProvider
 from .suite import Suite
 from .template import render_template
@@ -75,6 +76,9 @@ def make_provider(suite: Suite, *, mock: bool) -> Provider:
 def run_suite(suite: Suite, *, mock: bool = False) -> RunReport:
     """Execute every case in *suite* and return a :class:`RunReport`."""
     provider = make_provider(suite, mock=mock)
+    # Built once per run; only used by llm_judge assertions, and an
+    # unconfigured judge skips instead of failing (see judge.py).
+    judge = LLMJudge.from_env()
     report = RunReport(
         suite_name=suite.name,
         provider=provider.name,
@@ -97,7 +101,7 @@ def run_suite(suite: Suite, *, mock: bool = False) -> RunReport:
                 )
             )
             continue
-        results = check_assertions(completion.text, case.assertions)
+        results = check_assertions(completion.text, case.assertions, judge=judge)
         report.cases.append(
             CaseResult(
                 name=case.name,

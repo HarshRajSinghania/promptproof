@@ -29,7 +29,9 @@ def render_console(report: RunReport) -> str:
         if case.error:
             lines.append(f"    error: {case.error}")
         for result in case.assertions:
-            if not result.passed:
+            if result.skipped:
+                lines.append(f"    ⊘ {result.kind}: {result.detail}")
+            elif not result.passed:
                 lines.append(f"    ✗ {result.kind}: {result.detail}")
     lines.append("-" * len(header))
     usage_note = " (estimated)" if report.usage_estimated else ""
@@ -70,7 +72,7 @@ def report_to_dict(report: RunReport) -> dict[str, Any]:
                     "estimated": case.usage_estimated,
                 },
                 "assertions": [
-                    {"kind": r.kind, "passed": r.passed, "detail": r.detail}
+                    {"kind": r.kind, "passed": r.passed, "detail": r.detail, "skipped": r.skipped}
                     for r in case.assertions
                 ],
             }

@@ -8,6 +8,7 @@ A suite lists assertions as single-key mappings, e.g.::
       - regex: '"sentiment":\\s*"positive"'
       - max_chars: 500
       - json_schema: {type: object, required: [sentiment]}
+      - llm_judge: "the response is polite and answers the question"
 
 ``json_schema`` ships with a small built-in validator covering the subset of
 JSON Schema that prompt tests actually use (``type``, ``required``,
@@ -16,9 +17,10 @@ JSON Schema that prompt tests actually use (``type``, ``required``,
 hard dependency on the ``jsonschema`` package; see the README for the exact
 supported subset.
 
-Roadmap: an ``llm_judge`` assertion (a second model grading the response)
-is planned — the assertion registry below is where it will plug in — but it
-is intentionally *not* implemented in v0.1.
+``llm_judge`` is the odd one out: it needs a second model, configured via
+environment variables (see :mod:`promptproof.judge`). When no judge endpoint
+is configured the assertion reports itself as *skipped* instead of failing,
+so suites keep running offline and in CI without secrets.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .errors import AssertionConfigError
+from .judge import LLMJudge
 
 
 @dataclass
@@ -38,6 +41,10 @@ class AssertionResult:
     kind: str
     passed: bool
     detail: str = ""
+    #: True when the check never ran (e.g. ``llm_judge`` with no judge
+    #: endpoint configured). Skipped results count as passed so a suite
+    #: stays green, but are flagged in reports.
+    skipped: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +159,37 @@ def _check_json_schema(response: str, expected: Any) -> AssertionResult:
     return AssertionResult("json_schema", not errors, "; ".join(errors))
 
 
+def _check_llm_judge(response: str, expected: Any, judge: LLMJudge) -> AssertionResult:
+    """Grade *response* with *judge* against a natural-language criterion.
+
+    Accepts a plain string criterion, or a mapping with ``criterion`` plus
+    optional per-assertion ``model`` / ``base_url`` overrides::
+
+        - llm_judge: "the response is polite"
+        - llm_judge: {criterion: "the response is polite", model: gpt-4o}
+    """
+    overrides: dict[str, str] = {}
+    if isinstance(expected, dict):
+        criterion = expected.get("criterion")
+        if criterion is None:
+            raise AssertionConfigError("llm_judge mapping form requires a 'criterion' key")
+        for key in ("base_url", "model"):
+            if key in expected:
+                overrides[key] = str(expected[key])
+    else:
+        criterion = expected
+    criterion = str(criterion).strip()
+    if not criterion:
+        raise AssertionConfigError("llm_judge expects a non-empty criterion")
+    if overrides:
+        judge = judge.with_overrides(**overrides)
+    verdict = judge.evaluate(criterion, response)
+    if verdict.skipped:
+        return AssertionResult("llm_judge", True, f"skipped: {verdict.reason}", skipped=True)
+    detail = f"judge: {verdict.reason}" if verdict.reason else ""
+    return AssertionResult("llm_judge", verdict.passed, detail)
+
+
 _CHECKS = {
     "contains": _check_contains,
     "not_contains": _check_not_contains,
@@ -160,8 +198,8 @@ _CHECKS = {
     "json_schema": _check_json_schema,
 }
 
-#: Assertion kinds implemented in this version (``llm_judge`` is roadmap).
-SUPPORTED_ASSERTIONS = tuple(_CHECKS)
+#: Assertion kinds implemented in this version.
+SUPPORTED_ASSERTIONS = tuple(_CHECKS) + ("llm_judge",)
 
 
 def normalize_assertion(raw: Any) -> tuple[str, Any]:
@@ -184,11 +222,23 @@ def normalize_assertion(raw: Any) -> tuple[str, Any]:
     return str(kind), expected
 
 
-def check_assertions(response: str, assertions: list[Any]) -> list[AssertionResult]:
-    """Run every assertion in *assertions* against *response*."""
+def check_assertions(
+    response: str,
+    assertions: list[Any],
+    *,
+    judge: LLMJudge | None = None,
+) -> list[AssertionResult]:
+    """Run every assertion in *assertions* against *response*.
+
+    *judge* supplies the backend for ``llm_judge`` assertions; when omitted,
+    one is built from the environment (and skips gracefully if unconfigured).
+    """
     results: list[AssertionResult] = []
     for raw in assertions:
         kind, expected = normalize_assertion(raw)
+        if kind == "llm_judge":
+            results.append(_check_llm_judge(response, expected, judge or LLMJudge.from_env()))
+            continue
         check = _CHECKS.get(kind)
         if check is None:
             raise AssertionConfigError(
