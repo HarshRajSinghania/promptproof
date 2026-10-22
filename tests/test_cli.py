@@ -36,6 +36,19 @@ def test_run_writes_json_report(tmp_path, capsys):
     assert data["cases"][0]["assertions"], "per-assertion detail must be in the report"
 
 
+def test_run_writes_html_report(tmp_path):
+    report_path = tmp_path / "report.html"
+    code = main(
+        ["run", str(ROOT / "examples" / "basic.yaml"), "--mock", "--html", str(report_path)]
+    )
+    assert code == 0
+    text = report_path.read_text(encoding="utf-8")
+    assert text.startswith("<!DOCTYPE html>")
+    assert "sentiment-classifier" in text
+    assert "glowing review" in text
+    assert __version__ in text
+
+
 def test_run_missing_file_exits_two(capsys):
     code = main(["run", "does-not-exist.yaml", "--mock"])
     assert code == 2

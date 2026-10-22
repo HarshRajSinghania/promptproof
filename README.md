@@ -39,7 +39,8 @@ PromptProof treats a prompt the way unit tests treat a function:
   the question?"), an `llm_judge` assertion lets a second model grade the
   response against a criterion you state in plain language.
 - **Built for CI.** Plain-text table for humans, JSON report for machines,
-  exit code `1` when any case fails so GitHub Actions turns red.
+  a self-contained HTML report for sharing (`--html report.html`, no assets
+  needed), exit code `1` when any case fails so GitHub Actions turns red.
 - **No key needed to try it.** A built-in mock provider runs any suite
   offline, so a fresh clone works in 30 seconds and CI never needs secrets
   just to test the harness.
@@ -49,7 +50,7 @@ PromptProof treats a prompt the way unit tests treat a function:
 ```bash
 pip install promptproof        # or: pip install -e . from a clone
 promptproof run examples/basic.yaml --mock
-promptproof run examples/basic.yaml --mock --json report.json
+promptproof run examples/basic.yaml --mock --json report.json --html report.html
 ```
 
 That runs the bundled sentiment-classifier suite end-to-end — rendering,
@@ -182,7 +183,7 @@ spending tokens or requiring secrets from forks.
 - Golden-file snapshots: record real responses once, diff against them later
 - Multi-turn conversation suites
 - Cost budgets per suite (`max_tokens` / `max_usd` gates)
-- HTML report output
+- ~~HTML report output~~ — done: `promptproof run suite.yaml --html report.html`
 
 ## Contributing
 

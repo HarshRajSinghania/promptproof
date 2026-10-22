@@ -4,7 +4,7 @@ Usage::
 
     promptproof run suite.yaml            # real endpoint (needs API key)
     promptproof run suite.yaml --mock     # offline demo, no key needed
-    promptproof run suite.yaml --json report.json
+    promptproof run suite.yaml --json report.json --html report.html
     promptproof --version
 
 Exit codes: 0 = every case passed, 1 = at least one case failed,
@@ -19,7 +19,7 @@ from collections.abc import Sequence
 
 from . import __version__
 from .errors import PromptProofError
-from .report import render_console, write_json_report
+from .report import render_console, write_html_report, write_json_report
 from .runner import run_suite
 from .suite import load_suite
 
@@ -44,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         default=None,
         help="also write a machine-readable JSON report to PATH",
+    )
+    run.add_argument(
+        "--html",
+        metavar="PATH",
+        default=None,
+        help="also write a self-contained HTML report to PATH",
     )
     run.add_argument("--base-url", default=None, help="override the suite's model.base_url")
     run.add_argument("--model", default=None, help="override the suite's model.name")
@@ -73,6 +79,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.json:
         write_json_report(report, args.json)
         print(f"JSON report written to {args.json}")
+    if args.html:
+        write_html_report(report, args.html)
+        print(f"HTML report written to {args.html}")
     return 0 if report.ok else 1
 
 

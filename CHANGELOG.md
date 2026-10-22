@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - New deterministic assertions: `equals` (exact match, whitespace-trimmed),
   `min_chars` (mirror of `max_chars`), `starts_with` and `ends_with`
   (literal prefix/suffix checks).
+- HTML report output: `promptproof run suite.yaml --html report.html` writes
+  a self-contained HTML report (inline CSS, no assets), with per-case
+  assertion detail, skipped markers, and collapsible prompt/response blocks.
 
 ## [0.2.0] - 2026-10-21
 
