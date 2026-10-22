@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "promptproof"
+name = "promptproof-cli"
 version = "0.2.0"
 description = "Snapshot & regression testing for LLM prompts — YAML test suites, CI-friendly assertions, any OpenAI-compatible endpoint."
 readme = "README.md"

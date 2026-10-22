@@ -48,7 +48,7 @@ PromptProof treats a prompt the way unit tests treat a function:
 ## Quick start (offline demo)
 
 ```bash
-pip install promptproof        # or: pip install -e . from a clone
+pip install promptproof-cli        # or: pip install -e . from a clone
 promptproof run examples/basic.yaml --mock
 promptproof run examples/basic.yaml --mock --json report.json --html report.html
 ```
@@ -170,7 +170,7 @@ with the reason shown; it never crashes the run.
   env:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   run: |
-    pip install promptproof
+    pip install promptproof-cli
     promptproof run tests/prompts/checkout.yaml --json prompt-report.json
 ```
 

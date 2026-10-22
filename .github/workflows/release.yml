@@ -53,7 +53,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     environment:
       name: pypi
-      url: https://pypi.org/project/promptproof/
+      url: https://pypi.org/project/promptproof-cli/
     permissions:
       id-token: write
       contents: read

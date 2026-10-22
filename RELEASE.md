@@ -42,9 +42,9 @@ short-lived token per run.
 
 ## Verify a published release
 
-- `pip index versions promptproof` (or `pip install promptproof==x.y.z`
+- `pip index versions promptproof-cli` (or `pip install promptproof-cli==x.y.z`
   in a fresh venv) and `promptproof --version` shows the new version.
-- PyPI project page: <https://pypi.org/project/promptproof/>
+- PyPI project page: <https://pypi.org/project/promptproof-cli/>
 
 ## Status (2026-10-22)
 
