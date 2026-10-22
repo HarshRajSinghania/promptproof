@@ -7,8 +7,13 @@ A suite lists assertions as single-key mappings, e.g.::
       - not_contains: "negative"
       - regex: '"sentiment":\\s*"positive"'
       - max_chars: 500
+      - equals: "yes"
+      - starts_with: "Summary:"
       - json_schema: {type: object, required: [sentiment]}
       - llm_judge: "the response is polite and answers the question"
+
+``equals`` compares after stripping leading/trailing whitespace (models love
+trailing newlines); ``starts_with`` / ``ends_with`` match literally.
 
 ``json_schema`` ships with a small built-in validator covering the subset of
 JSON Schema that prompt tests actually use (``type``, ``required``,
@@ -148,6 +153,41 @@ def _check_max_chars(response: str, expected: Any) -> AssertionResult:
     )
 
 
+def _check_min_chars(response: str, expected: Any) -> AssertionResult:
+    try:
+        minimum = int(expected)
+    except (TypeError, ValueError) as exc:
+        raise AssertionConfigError(f"min_chars expects an integer, got {expected!r}") from exc
+    ok = len(response) >= minimum
+    return AssertionResult(
+        "min_chars", ok, "" if ok else f"response is {len(response)} chars, minimum is {minimum}"
+    )
+
+
+def _check_equals(response: str, expected: Any) -> AssertionResult:
+    wanted = str(expected).strip()
+    ok = response.strip() == wanted
+    return AssertionResult(
+        "equals", ok, "" if ok else f"response does not exactly equal {wanted!r}"
+    )
+
+
+def _check_starts_with(response: str, expected: Any) -> AssertionResult:
+    prefix = str(expected)
+    ok = response.startswith(prefix)
+    return AssertionResult(
+        "starts_with", ok, "" if ok else f"response does not start with {prefix!r}"
+    )
+
+
+def _check_ends_with(response: str, expected: Any) -> AssertionResult:
+    suffix = str(expected)
+    ok = response.endswith(suffix)
+    return AssertionResult(
+        "ends_with", ok, "" if ok else f"response does not end with {suffix!r}"
+    )
+
+
 def _check_json_schema(response: str, expected: Any) -> AssertionResult:
     if not isinstance(expected, dict):
         raise AssertionConfigError("json_schema expects a mapping (schema object)")
@@ -195,6 +235,10 @@ _CHECKS = {
     "not_contains": _check_not_contains,
     "regex": _check_regex,
     "max_chars": _check_max_chars,
+    "min_chars": _check_min_chars,
+    "equals": _check_equals,
+    "starts_with": _check_starts_with,
+    "ends_with": _check_ends_with,
     "json_schema": _check_json_schema,
 }
 

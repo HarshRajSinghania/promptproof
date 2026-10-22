@@ -32,6 +32,32 @@ def test_max_chars():
     assert "limit is 10" in result.detail
 
 
+def test_min_chars():
+    assert only("hello world", {"min_chars": 5}).passed
+    result = only("hi", {"min_chars": 5})
+    assert not result.passed
+    assert "minimum is 5" in result.detail
+    with pytest.raises(AssertionConfigError, match="min_chars expects an integer"):
+        check_assertions("x", [{"min_chars": "many"}])
+
+
+def test_equals():
+    assert only("yes", {"equals": "yes"}).passed
+    # trailing newlines are noise, not meaning
+    assert only("yes\n", {"equals": "yes"}).passed
+    assert not only("yes please", {"equals": "yes"}).passed
+
+
+def test_starts_with():
+    assert only("Summary: great keyboard", {"starts_with": "Summary:"}).passed
+    assert not only("In summary: great", {"starts_with": "Summary:"}).passed
+
+
+def test_ends_with():
+    assert only("all done.", {"ends_with": "."}).passed
+    assert not only("all done!", {"ends_with": "."}).passed
+
+
 def test_type_value_form():
     assert only("abc", {"type": "contains", "value": "b"}).passed
 

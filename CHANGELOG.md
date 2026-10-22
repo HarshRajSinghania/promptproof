@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- New deterministic assertions: `equals` (exact match, whitespace-trimmed),
+  `min_chars` (mirror of `max_chars`), `starts_with` and `ends_with`
+  (literal prefix/suffix checks).
+
 ## [0.2.0] - 2026-10-21
 
 ### Added
