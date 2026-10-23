@@ -41,6 +41,22 @@ class ModelConfig:
 
 
 @dataclass
+class Pricing:
+    """Per-1k-token prices in USD for cost estimation."""
+
+    input_per_1k: float = 0.0
+    output_per_1k: float = 0.0
+
+
+@dataclass
+class Limits:
+    """Hard run budgets: the run fails when a budget is exceeded."""
+
+    max_tokens: int | None = None
+    max_usd: float | None = None
+
+
+@dataclass
 class Case:
     name: str
     vars: dict[str, Any] = field(default_factory=dict)
@@ -55,6 +71,8 @@ class Suite:
     model: ModelConfig = field(default_factory=ModelConfig)
     mock: MockConfig = field(default_factory=MockConfig)
     cases: list[Case] = field(default_factory=list)
+    pricing: Pricing = field(default_factory=Pricing)
+    limits: Limits = field(default_factory=Limits)
     source: str = ""
 
 
@@ -100,6 +118,19 @@ def load_suite(path: str | Path) -> Suite:
         rules=[dict(rule) for rule in mock_raw.get("rules", [])],
     )
 
+    pricing_raw = raw.get("pricing") or {}
+    pricing = Pricing(
+        input_per_1k=float(pricing_raw.get("input_per_1k", 0.0)),
+        output_per_1k=float(pricing_raw.get("output_per_1k", 0.0)),
+    )
+    limits_raw = raw.get("limits") or {}
+    limits = Limits(
+        max_tokens=(
+            int(limits_raw["max_tokens"]) if "max_tokens" in limits_raw else None
+        ),
+        max_usd=float(limits_raw["max_usd"]) if "max_usd" in limits_raw else None,
+    )
+
     cases: list[Case] = []
     for index, raw_case in enumerate(raw_cases):
         if not isinstance(raw_case, dict):
@@ -121,5 +152,7 @@ def load_suite(path: str | Path) -> Suite:
         model=model,
         mock=mock,
         cases=cases,
+        pricing=pricing,
+        limits=limits,
         source=str(suite_path),
     )

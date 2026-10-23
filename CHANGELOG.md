@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - HTML report output: `promptproof run suite.yaml --html report.html` writes
   a self-contained HTML report (inline CSS, no assets), with per-case
   assertion detail, skipped markers, and collapsible prompt/response blocks.
+- Cost budgets: suite-level `pricing` (per-1k-token USD prices) and `limits`
+  (`max_tokens` / `max_usd` hard gates). The run's estimated cost is printed
+  in the console summary and recorded in the JSON report
+  (`summary.estimated_cost_usd`); a breached gate fails the run with exit
+  code `1` and a `BUDGET EXCEEDED:` line. New example `examples/budgets.yaml`.
 
 ## [0.2.0] - 2026-10-21
 

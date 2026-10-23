@@ -39,6 +39,9 @@ class RunReport:
     provider: str
     model: str
     cases: list[CaseResult] = field(default_factory=list)
+    estimated_cost_usd: float = 0.0
+    cost_estimated: bool = False
+    budget_error: str = ""
 
     @property
     def passed_count(self) -> int:
@@ -53,12 +56,20 @@ class RunReport:
         return sum(c.total_tokens for c in self.cases)
 
     @property
+    def total_prompt_tokens(self) -> int:
+        return sum(c.prompt_tokens for c in self.cases)
+
+    @property
+    def total_completion_tokens(self) -> int:
+        return sum(c.completion_tokens for c in self.cases)
+
+    @property
     def usage_estimated(self) -> bool:
         return any(c.usage_estimated for c in self.cases)
 
     @property
     def ok(self) -> bool:
-        return self.failed_count == 0
+        return self.failed_count == 0 and not self.budget_error
 
 
 def make_provider(suite: Suite, *, mock: bool) -> Provider:
@@ -115,4 +126,30 @@ def run_suite(suite: Suite, *, mock: bool = False) -> RunReport:
                 usage_estimated=completion.usage_estimated,
             )
         )
+    _apply_budgets(report, suite)
     return report
+
+
+def estimate_cost_usd(report: RunReport, suite: Suite) -> float:
+    """Estimate the run's cost in USD from the suite's per-1k-token pricing."""
+    return (
+        report.total_prompt_tokens * suite.pricing.input_per_1k / 1000
+        + report.total_completion_tokens * suite.pricing.output_per_1k / 1000
+    )
+
+
+def _apply_budgets(report: RunReport, suite: Suite) -> None:
+    """Fill cost fields and fail the run when a suite budget is exceeded."""
+    report.estimated_cost_usd = estimate_cost_usd(report, suite)
+    report.cost_estimated = report.usage_estimated
+    limits = suite.limits
+    if limits.max_tokens is not None and report.total_tokens > limits.max_tokens:
+        report.budget_error = (
+            f"token budget exceeded: {report.total_tokens} tokens > "
+            f"max_tokens {limits.max_tokens}"
+        )
+    elif limits.max_usd is not None and report.estimated_cost_usd > limits.max_usd:
+        report.budget_error = (
+            f"cost budget exceeded: ${report.estimated_cost_usd:.4f} > "
+            f"max_usd ${limits.max_usd:.4f}"
+        )

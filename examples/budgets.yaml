@@ -1,0 +1,52 @@
+# PromptProof example suite — per-suite cost & token budgets.
+#
+# `pricing` declares the model's per-1k-token prices in USD so the run cost
+# can be estimated. `limits` sets hard gates: when the run's token total or
+# estimated cost exceeds a limit, the run fails (exit code 1).
+#
+# Run it offline with:
+#   promptproof run examples/budgets.yaml --mock
+# (usage and cost are *estimated* on mock runs, exactly as on the console)
+#
+# The token budget here is deliberately tight so you can see the gate fire:
+#   BUDGET EXCEEDED: token budget exceeded: 66 tokens > max_tokens 50
+# (exit code 1, just like a failing assertion)
+
+name: budget-demo
+
+model:
+  base_url: https://api.openai.com/v1
+  name: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+  temperature: 0
+
+pricing:
+  input_per_1k: 0.15
+  output_per_1k: 0.60
+
+limits:
+  max_tokens: 50       # hard gate: the run fails above 50 tokens
+  max_usd: 0.05        # hard gate: the run fails above five cents (estimated)
+
+prompt: |
+  Classify the sentiment of the following product review as positive,
+  negative, or neutral. Respond with a JSON object only, for example
+  {"sentiment": "positive"}.
+
+  Review: {{review}}
+
+mock:
+  default: '{"sentiment": "neutral"}'
+  rules:
+    - match: "absolutely loved"
+      response: '{"sentiment": "positive"}'
+    - match: "broke after"
+      response: '{"sentiment": "negative"}'
+
+cases:
+  - name: glowing review
+    vars:
+      review: "I absolutely loved this keyboard — best purchase of the year."
+    assertions:
+      - contains: '"positive"'
+      - max_chars: 100

@@ -72,6 +72,37 @@ written into suite files or reports.
 Exit codes: `0` all cases passed · `1` a case failed · `2` the suite or
 configuration is invalid.
 
+### Cost & token budgets
+
+Declare your model's per-1k-token prices and hard budget gates at the top
+of a suite. When the run's token total or estimated cost crosses a limit,
+the whole run fails — before the bill surprises you:
+
+```yaml
+pricing:
+  input_per_1k: 0.15    # USD per 1k input tokens
+  output_per_1k: 0.60   # USD per 1k output tokens
+
+limits:
+  max_tokens: 5000      # hard gate on the run's token total
+  max_usd: 0.50         # hard gate on the run's estimated cost (USD)
+```
+
+The estimated cost is printed in the console summary and recorded in the
+JSON report (`summary.estimated_cost_usd`). On `--mock` runs, usage and
+cost are estimated exactly like everywhere else (see "No key needed to try
+it"). A breached gate fails the run with exit code `1` and a
+`BUDGET EXCEEDED: …` line in the report — `examples/budgets.yaml` ships
+with a deliberately tiny budget so you can watch it fire:
+
+```console
+$ promptproof run examples/budgets.yaml --mock
+…
+1 passed, 0 failed, 1 total — 66 tokens (estimated)
+estimated cost: $0.0131 (estimated)
+BUDGET EXCEEDED: token budget exceeded: 66 tokens > max_tokens 50
+```
+
 ## Suite files
 
 ```yaml
@@ -182,7 +213,8 @@ spending tokens or requiring secrets from forks.
 
 - Golden-file snapshots: record real responses once, diff against them later
 - Multi-turn conversation suites
-- Cost budgets per suite (`max_tokens` / `max_usd` gates)
+- ~~Cost budgets per suite (`max_tokens` / `max_usd` gates)~~ — done:
+  suite-level `pricing` + `limits` gates, cost estimate in every report
 - ~~HTML report output~~ — done: `promptproof run suite.yaml --html report.html`
 
 ## Contributing
