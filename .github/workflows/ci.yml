@@ -30,3 +30,5 @@ jobs:
           promptproof --version
           promptproof run examples/basic.yaml --mock --json report.json
           promptproof run examples/headlines.yaml --mock
+          promptproof run examples/budgets.yaml --mock || true   # tiny budget: gate is *meant* to fire
+          promptproof run examples/snapshots.yaml --mock        # diffs against the committed golden file

@@ -51,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="also write a self-contained HTML report to PATH",
     )
+    run.add_argument(
+        "--record",
+        action="store_true",
+        help="record snapshot-enabled cases' responses into the golden file "
+        "instead of diffing against it",
+    )
     run.add_argument("--base-url", default=None, help="override the suite's model.base_url")
     run.add_argument("--model", default=None, help="override the suite's model.name")
     return parser
@@ -70,12 +76,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             suite.model.base_url = args.base_url
         if args.model:
             suite.model.name = args.model
-        report = run_suite(suite, mock=args.mock)
+        report = run_suite(suite, mock=args.mock, record=args.record)
     except PromptProofError as exc:
         print(f"promptproof: error: {exc}", file=sys.stderr)
         return 2
 
     print(render_console(report))
+    if args.record:
+        print("Golden snapshots recorded.")
     if args.json:
         write_json_report(report, args.json)
         print(f"JSON report written to {args.json}")

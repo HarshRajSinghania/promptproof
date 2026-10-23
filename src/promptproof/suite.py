@@ -62,6 +62,7 @@ class Case:
     vars: dict[str, Any] = field(default_factory=dict)
     assertions: list[Any] = field(default_factory=list)
     mock_response: str | None = None
+    snapshot: bool = False
 
 
 @dataclass
@@ -73,6 +74,9 @@ class Suite:
     cases: list[Case] = field(default_factory=list)
     pricing: Pricing = field(default_factory=Pricing)
     limits: Limits = field(default_factory=Limits)
+    #: Path to the golden file for snapshot cases; defaults to
+    #: ``<suite-stem>.golden.json`` next to the suite file when None.
+    snapshot_file: str | None = None
     source: str = ""
 
 
@@ -143,6 +147,7 @@ def load_suite(path: str | Path) -> Suite:
                 mock_response=(
                     str(raw_case["mock_response"]) if "mock_response" in raw_case else None
                 ),
+                snapshot=bool(raw_case.get("snapshot", False)),
             )
         )
 
@@ -154,5 +159,8 @@ def load_suite(path: str | Path) -> Suite:
         cases=cases,
         pricing=pricing,
         limits=limits,
+        snapshot_file=(
+            str(raw["snapshot_file"]) if "snapshot_file" in raw else None
+        ),
         source=str(suite_path),
     )

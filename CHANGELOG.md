@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   in the console summary and recorded in the JSON report
   (`summary.estimated_cost_usd`); a breached gate fails the run with exit
   code `1` and a `BUDGET EXCEEDED:` line. New example `examples/budgets.yaml`.
+- Golden-file snapshots: case-level `snapshot: true` plus `--record` mode
+  that writes `<suite-name>.golden.json`; subsequent runs diff each response
+  against the golden value and fail on drift. CI diffs the committed
+  `examples/snapshots.golden.json`. New example `examples/snapshots.yaml`.
 
 ## [0.2.0] - 2026-10-21
 

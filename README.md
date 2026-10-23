@@ -103,6 +103,24 @@ estimated cost: $0.0131 (estimated)
 BUDGET EXCEEDED: token budget exceeded: 66 tokens > max_tokens 50
 ```
 
+### Golden-file snapshots
+
+For the drift that patterns can't catch, mark a case with `snapshot: true`
+and record its real response once — then every later run diffs the fresh
+response against the recorded golden value:
+
+```console
+$ promptproof run examples/snapshots.yaml --record    # needs the real model once
+$ promptproof run examples/snapshots.yaml             # diffs against the golden file
+```
+
+Goldens are stored as JSON next to the suite file
+(`<suite-name>.golden.json`, overridable with a top-level `snapshot_file:`
+key), keyed by case name. A changed response fails the case with a
+`snapshot` assertion result ("re-run with `--record` to update"). A
+`snapshot: true` case with no recorded golden fails with a hint to record
+one first, so the workflow never silently skips.
+
 ## Suite files
 
 ```yaml
@@ -211,7 +229,8 @@ spending tokens or requiring secrets from forks.
 
 ## Roadmap
 
-- Golden-file snapshots: record real responses once, diff against them later
+- ~~Golden-file snapshots~~ — done: `snapshot: true` cases + `--record`
+  writes `<suite-name>.golden.json`; later runs diff against it
 - Multi-turn conversation suites
 - ~~Cost budgets per suite (`max_tokens` / `max_usd` gates)~~ — done:
   suite-level `pricing` + `limits` gates, cost estimate in every report

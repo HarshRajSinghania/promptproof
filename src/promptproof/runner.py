@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Union
 
 from .assertions import AssertionResult, check_assertions
 from .judge import LLMJudge
 from .providers import MockProvider, OpenAICompatibleProvider
+from .snapshots import default_snapshot_path, load_goldens, save_goldens
 from .suite import Suite
 from .template import render_template
 
@@ -84,8 +86,34 @@ def make_provider(suite: Suite, *, mock: bool) -> Provider:
     )
 
 
-def run_suite(suite: Suite, *, mock: bool = False) -> RunReport:
-    """Execute every case in *suite* and return a :class:`RunReport`."""
+def snapshot_path(suite: Suite) -> Path | str:
+    """Resolve the golden-file path for *suite* (explicit or default)."""
+    if suite.snapshot_file:
+        return Path(suite.snapshot_file)
+    return default_snapshot_path(suite.source or f"{suite.name}.yaml")
+
+
+def _check_snapshot(response: str, golden: str) -> AssertionResult:
+    """Diff a response against its golden value."""
+    if response == golden:
+        return AssertionResult("snapshot", True, "matches golden snapshot")
+    return AssertionResult(
+        "snapshot",
+        False,
+        f"response differs from golden snapshot ({len(response)} chars "
+        f"vs golden {len(golden)} chars); re-run with --record to update",
+    )
+
+
+def run_suite(
+    suite: Suite, *, mock: bool = False, record: bool = False
+) -> RunReport:
+    """Execute every case in *suite* and return a :class:`RunReport`.
+
+    With ``record=True`` each snapshot-enabled case's response is written to
+    the golden file instead of being diffed, and the run exits green (cases
+    that error still fail).
+    """
     provider = make_provider(suite, mock=mock)
     # Built once per run; only used by llm_judge assertions, and an
     # unconfigured judge skips instead of failing (see judge.py).
@@ -95,6 +123,8 @@ def run_suite(suite: Suite, *, mock: bool = False) -> RunReport:
         provider=provider.name,
         model="mock" if mock else suite.model.name,
     )
+    goldens: dict[str, str] = {} if record else load_goldens(snapshot_path(suite))
+    recorded: dict[str, str] = {}
     for case in suite.cases:
         started = time.perf_counter()
         prompt = render_template(suite.prompt, case.vars)
@@ -112,7 +142,44 @@ def run_suite(suite: Suite, *, mock: bool = False) -> RunReport:
                 )
             )
             continue
+        if record:
+            recorded[case.name] = completion.text
+            report.cases.append(
+                CaseResult(
+                    name=case.name,
+                    passed=True,
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    prompt=prompt,
+                    response=completion.text,
+                    prompt_tokens=completion.prompt_tokens,
+                    completion_tokens=completion.completion_tokens,
+                    usage_estimated=completion.usage_estimated,
+                )
+            )
+            continue
         results = check_assertions(completion.text, case.assertions, judge=judge)
+        if case.snapshot:
+            golden = goldens.get(case.name)
+            if golden is None:
+                report.cases.append(
+                    CaseResult(
+                        name=case.name,
+                        passed=False,
+                        duration_ms=(time.perf_counter() - started) * 1000,
+                        prompt=prompt,
+                        response=completion.text,
+                        assertions=results,
+                        prompt_tokens=completion.prompt_tokens,
+                        completion_tokens=completion.completion_tokens,
+                        usage_estimated=completion.usage_estimated,
+                        error=(
+                            f"no golden snapshot for case {case.name!r}; "
+                            "run with --record to create it"
+                        ),
+                    )
+                )
+                continue
+            results.append(_check_snapshot(completion.text, golden))
         report.cases.append(
             CaseResult(
                 name=case.name,
@@ -126,6 +193,8 @@ def run_suite(suite: Suite, *, mock: bool = False) -> RunReport:
                 usage_estimated=completion.usage_estimated,
             )
         )
+    if record:
+        save_goldens(snapshot_path(suite), recorded)
     _apply_budgets(report, suite)
     return report
 

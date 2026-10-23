@@ -1,0 +1,52 @@
+# PromptProof example suite — golden-file snapshots.
+#
+# Mark a case with `snapshot: true` and the response is recorded into a
+# golden file once (`--record`), then diffed on every later run. When the
+# model starts answering differently — a swapped model version, a silent
+# provider update — the case fails with a `snapshot` assertion result.
+#
+# Record the goldens first (any provider works; --mock keeps it offline):
+#   promptproof run examples/snapshots.yaml --mock --record
+#
+# Then run normally:
+#   promptproof run examples/snapshots.yaml --mock
+#
+# Goldens live in `snapshots.golden.json` next to this file by default
+# (override with a top-level `snapshot_file:` key).
+
+name: snapshot-demo
+
+model:
+  base_url: https://api.openai.com/v1
+  name: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+  temperature: 0
+
+prompt: |
+  Classify the sentiment of the following product review as positive,
+  negative, or neutral. Respond with a JSON object only, for example
+  {"sentiment": "positive"}.
+
+  Review: {{review}}
+
+mock:
+  default: '{"sentiment": "neutral"}'
+  rules:
+    - match: "absolutely loved"
+      response: '{"sentiment": "positive"}'
+    - match: "broke after"
+      response: '{"sentiment": "negative"}'
+
+cases:
+  - name: glowing review
+    vars:
+      review: "I absolutely loved this keyboard — best purchase of the year."
+    snapshot: true
+    assertions:
+      - contains: '"positive"'
+  - name: broken item
+    vars:
+      review: "It broke after one week. Do not buy."
+    snapshot: true
+    assertions:
+      - contains: '"negative"'
