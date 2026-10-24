@@ -46,7 +46,15 @@ short-lived token per run.
   in a fresh venv) and `promptproof --version` shows the new version.
 - PyPI project page: <https://pypi.org/project/promptproof-cli/>
 
-## Status (2026-10-22)
+## Status (2026-10-24)
+
+- Packaging validated locally: `python -m build` + `twine check --strict`
+  pass for the current tree (0.4.0).
+- Release workflow `release.yml` is in place and wired to the `pypi`
+  environment; it will publish automatically on a `v*` tag push.
+- ✅ **Trusted-publisher setup confirmed working**: v0.3.0 is live on PyPI
+  (<https://pypi.org/project/promptproof-cli/0.3.0/>) via the OIDC
+  pipeline, so the 2026-10-22 "blocked on maintainer" note is resolved.
 
 - Packaging validated locally: `python -m build` + `twine check --strict`
   pass for the current tree (0.2.0).
