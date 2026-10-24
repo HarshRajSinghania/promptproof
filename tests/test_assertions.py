@@ -25,6 +25,26 @@ def test_regex():
     assert not only("plain text", {"regex": r"\d+"}).passed
 
 
+def test_not_regex():
+    assert only("plain text", {"not_regex": r"\d+"}).passed
+    result = only("order 12345 shipped", {"not_regex": r"\d{5,}"})
+    assert not result.passed
+    assert "forbidden" in result.detail
+    with pytest.raises(AssertionConfigError, match="invalid regex"):
+        check_assertions("x", [{"not_regex": "(unclosed"}])
+
+
+def test_contains_all():
+    assert only("sunny and warm", {"contains_all": ["sunny", "warm"]}).passed
+    result = only("sunny and warm", {"contains_all": ["sunny", "rainy"]})
+    assert not result.passed
+    assert "rainy" in result.detail
+    with pytest.raises(AssertionConfigError, match="non-empty list"):
+        check_assertions("x", [{"contains_all": []}])
+    with pytest.raises(AssertionConfigError, match="non-empty list"):
+        check_assertions("x", [{"contains_all": "not-a-list"}])
+
+
 def test_max_chars():
     assert only("short", {"max_chars": 10}).passed
     result = only("a much longer response", {"max_chars": 10})

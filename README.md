@@ -191,8 +191,10 @@ example (`promptproof run examples/multiturn.yaml --mock`).
 | Assertion      | Example                                   | Passes when…                                             |
 | -------------- | ----------------------------------------- | -------------------------------------------------------- |
 | `contains`     | `contains: '"positive"'`                 | the response contains the substring                      |
+| `contains_all` | `contains_all: ["a", "b"]`              | the response contains *every* listed substring           |
 | `not_contains` | `not_contains: "I don't know"`            | the response does *not* contain the substring            |
 | `regex`        | `regex: '"id":\s*\d+'`                    | the pattern matches somewhere in the response            |
+| `not_regex`    | `not_regex: "\\d{16}"`                    | the pattern matches *nowhere* in the response            |
 | `json_schema`  | `json_schema: {type: object, required: [sentiment]}` | the response parses as JSON and validates against the schema |
 | `max_chars`    | `max_chars: 500`                          | the response is at most N characters                     |
 | `min_chars`    | `min_chars: 50`                           | the response is at least N characters                    |

@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   are checked per turn and reports show per-turn detail in console, JSON,
   and HTML output. `snapshot: true` / `--record` apply to the conversation's
   final reply. New example `examples/multiturn.yaml`.
+- New deterministic assertions: `not_regex` (mirror of `regex` — passes
+  when the pattern matches *nowhere*, e.g. to ban PII shapes or
+  stack-trace fragments) and `contains_all` (takes a list of substrings,
+  passes only when every one is present, and names the missing ones).
 
 ## [0.3.0] - 2026-10-23
 

@@ -15,6 +15,16 @@ A suite lists assertions as single-key mappings, e.g.::
 ``equals`` compares after stripping leading/trailing whitespace (models love
 trailing newlines); ``starts_with`` / ``ends_with`` match literally.
 
+``not_regex`` is the mirror of ``regex``: it passes when the pattern does
+*not* match anywhere in the response — handy for banning PII shapes,
+stack-trace fragments, or forbidden phrasing.
+
+``contains_all`` takes a list of substrings and passes only when every one
+is present; the detail names the missing ones:
+
+    assertions:
+      - contains_all: ["positive", "confidence"]
+
 ``json_schema`` ships with a small built-in validator covering the subset of
 JSON Schema that prompt tests actually use (``type``, ``required``,
 ``properties``, ``items``, ``enum``, ``minimum``/``maximum``,
@@ -133,6 +143,31 @@ def _check_not_contains(response: str, expected: Any) -> AssertionResult:
     return AssertionResult("not_contains", ok, "" if ok else f"response contains forbidden {needle!r}")
 
 
+def _check_not_regex(response: str, expected: Any) -> AssertionResult:
+    pattern = str(expected)
+    try:
+        matched = re.search(pattern, response) is not None
+    except re.error as exc:
+        raise AssertionConfigError(f"invalid regex {pattern!r}: {exc}") from exc
+    return AssertionResult(
+        "not_regex", not matched, "" if not matched else f"response matches forbidden /{pattern}/"
+    )
+
+
+def _check_contains_all(response: str, expected: Any) -> AssertionResult:
+    if not isinstance(expected, list) or not expected:
+        raise AssertionConfigError(
+            f"contains_all expects a non-empty list of substrings, got {expected!r}"
+        )
+    needles = [str(item) for item in expected]
+    missing = [needle for needle in needles if needle not in response]
+    return AssertionResult(
+        "contains_all",
+        not missing,
+        "" if not missing else f"response is missing {missing!r}",
+    )
+
+
 def _check_regex(response: str, expected: Any) -> AssertionResult:
     pattern = str(expected)
     try:
@@ -232,8 +267,10 @@ def _check_llm_judge(response: str, expected: Any, judge: LLMJudge) -> Assertion
 
 _CHECKS = {
     "contains": _check_contains,
+    "contains_all": _check_contains_all,
     "not_contains": _check_not_contains,
     "regex": _check_regex,
+    "not_regex": _check_not_regex,
     "max_chars": _check_max_chars,
     "min_chars": _check_min_chars,
     "equals": _check_equals,
