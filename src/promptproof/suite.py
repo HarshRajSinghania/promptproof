@@ -19,6 +19,25 @@ A suite file looks like::
         vars: {review: "I loved it"}
         assertions:
           - contains: positive
+
+A case may instead define ``turns`` for a multi-turn conversation: each turn
+is a mapping with ``prompt`` (required, rendered with the case's ``vars``),
+optional ``assertions`` (checked against that turn's reply), and optional
+``mock_response``. For multi-turn cases the suite-level ``prompt`` becomes
+the conversation's system message, and every turn's reply is appended to
+the history sent to the model::
+
+    cases:
+      - name: remembers the customer name
+        turns:
+          - prompt: "Hi, I'm Alex. My order #4821 arrived broken."
+            mock_response: "I'm sorry, Alex! Let me check order #4821."
+            assertions:
+              - contains: Alex
+          - prompt: "What's my name again?"
+            mock_response: "Your name is Alex."
+            assertions:
+              - contains: Alex
 """
 
 from __future__ import annotations
@@ -63,6 +82,10 @@ class Case:
     assertions: list[Any] = field(default_factory=list)
     mock_response: str | None = None
     snapshot: bool = False
+    #: Multi-turn conversation turns. Each turn is a mapping with ``prompt``
+    #: (required), ``assertions`` (optional, checked against that turn's
+    #: reply) and ``mock_response`` (optional). Empty for single-turn cases.
+    turns: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +116,33 @@ def _load_raw(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise PromptProofError(f"suite file {path} must contain a mapping at the top level")
     return data
+
+
+def _load_turns(raw_turns: Any, index: int, suite_path: Path) -> list[dict[str, Any]]:
+    """Validate a case's ``turns`` list; returns ``[]`` when absent."""
+    if raw_turns is None:
+        return []
+    case_ref = f"case #{index + 1} in {suite_path}"
+    if not isinstance(raw_turns, list) or not raw_turns:
+        raise PromptProofError(f"{case_ref}: 'turns' must be a non-empty list")
+    turns: list[dict[str, Any]] = []
+    for turn_index, raw_turn in enumerate(raw_turns):
+        turn_ref = f"{case_ref}, turn #{turn_index + 1}"
+        if not isinstance(raw_turn, dict):
+            raise PromptProofError(f"{turn_ref} must be a mapping")
+        prompt = raw_turn.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise PromptProofError(f"{turn_ref} is missing a non-empty 'prompt'")
+        turns.append(
+            {
+                "prompt": prompt,
+                "assertions": list(raw_turn.get("assertions", [])),
+                "mock_response": (
+                    str(raw_turn["mock_response"]) if "mock_response" in raw_turn else None
+                ),
+            }
+        )
+    return turns
 
 
 def load_suite(path: str | Path) -> Suite:
@@ -139,6 +189,13 @@ def load_suite(path: str | Path) -> Suite:
     for index, raw_case in enumerate(raw_cases):
         if not isinstance(raw_case, dict):
             raise PromptProofError(f"case #{index + 1} in {suite_path} must be a mapping")
+        turns = _load_turns(raw_case.get("turns"), index, suite_path)
+        if turns and raw_case.get("assertions"):
+            raise PromptProofError(
+                f"case {raw_case.get('name', f'#{index + 1}')} in {suite_path}: "
+                "'turns' and case-level 'assertions' cannot be combined — "
+                "put assertions on the individual turns"
+            )
         cases.append(
             Case(
                 name=str(raw_case.get("name", f"case-{index + 1}")),
@@ -148,6 +205,7 @@ def load_suite(path: str | Path) -> Suite:
                     str(raw_case["mock_response"]) if "mock_response" in raw_case else None
                 ),
                 snapshot=bool(raw_case.get("snapshot", False)),
+                turns=turns,
             )
         )
 

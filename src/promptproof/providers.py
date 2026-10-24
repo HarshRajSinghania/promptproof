@@ -4,15 +4,25 @@ The mock provider exists so a suite can be exercised end-to-end with no API
 key — in CI, in a fresh clone, in a code review. It resolves a response for
 a rendered prompt in this order:
 
-1. the case's own ``mock_response`` field, if present;
+1. the case's (or turn's) own ``mock_response`` field, if present;
 2. the first matching entry in the suite's ``mock.rules`` list
    (``match`` is a substring, or a regex when wrapped in ``/.../``);
 3. the suite's ``mock.default`` response;
 4. a small JSON echo of the prompt (so unconfigured mocks still return
    something inspectable).
 
+For multi-turn conversations the mock resolves each turn against that
+turn's user message only — history is ignored, so mocks stay deterministic.
+
 Token usage from the mock is *estimated* (chars / 4) and flagged as such in
 reports — never presented as real billing data.
+
+Both providers expose two entry points:
+
+- ``complete(prompt, ...)`` — one user message, one reply (the
+  classic single-turn case);
+- ``complete_conversation(messages, ...)`` — a full ``[{role, content}]``
+  history, used by multi-turn cases; ``complete`` delegates to it.
 """
 
 from __future__ import annotations
@@ -79,10 +89,31 @@ class MockProvider:
         return json.dumps({"mock": True, "echo": prompt[:200]})
 
     def complete(self, prompt: str, *, case_mock_response: str | None = None) -> Completion:
-        text = self._resolve(prompt, case_mock_response)
+        return self.complete_conversation(
+            [{"role": "user", "content": prompt}],
+            case_mock_response=case_mock_response,
+        )
+
+    def complete_conversation(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        case_mock_response: str | None = None,
+    ) -> Completion:
+        """Reply to a multi-turn *messages* history (mock: deterministic).
+
+        The mock resolves each turn against that turn's user message only —
+        history is ignored, so mocks stay deterministic.
+        """
+        last_user = ""
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                last_user = str(message.get("content", ""))
+                break
+        text = self._resolve(last_user, case_mock_response)
         return Completion(
             text=text,
-            prompt_tokens=estimate_tokens(prompt),
+            prompt_tokens=estimate_tokens(last_user),
             completion_tokens=estimate_tokens(text),
             usage_estimated=True,
         )
@@ -114,6 +145,18 @@ class OpenAICompatibleProvider:
         self.timeout = timeout
 
     def complete(self, prompt: str, *, case_mock_response: str | None = None) -> Completion:
+        return self.complete_conversation(
+            [{"role": "user", "content": prompt}],
+            case_mock_response=case_mock_response,
+        )
+
+    def complete_conversation(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        case_mock_response: str | None = None,
+    ) -> Completion:
+        """Send a full ``[{role, content}]`` history and return the reply."""
         api_key = os.environ.get(self.api_key_env, "")
         if not api_key:
             raise PromptProofError(
@@ -123,7 +166,7 @@ class OpenAICompatibleProvider:
         payload = {
             "model": self.model,
             "temperature": self.temperature,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
         }
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",

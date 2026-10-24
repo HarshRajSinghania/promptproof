@@ -1,0 +1,61 @@
+# PromptProof example suite — multi-turn conversation testing.
+#
+# Run it offline (no API key) with:
+#   promptproof run examples/multiturn.yaml --mock
+#
+# Each case is a conversation: the suite-level `prompt` becomes the system
+# message, and every turn's rendered prompt is sent as a user message with
+# the full history attached. That lets you test memory across turns,
+# persona consistency, and follow-up behaviour — assertions are checked per
+# turn against that turn's reply.
+
+name: support-chat
+
+model:
+  base_url: https://api.openai.com/v1
+  name: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+  temperature: 0
+
+prompt: |
+  You are a friendly customer-support agent for Acme Widgets. You always
+  greet the customer by name once you know it, and you never invent order
+  details you were not given.
+
+# Offline behaviour for --mock runs. Rules are matched against each turn's
+# user message (not the whole history), first match wins; a turn may also
+# set its own `mock_response`.
+mock:
+  default: "I can help with that."
+  rules:
+    - match: "arrived broken"
+      response: "I'm really sorry, Alex! Let me look up order #4821 for you."
+    - match: "What's my name"
+      response: "Your name is Alex, and your order is #4821."
+    - match: "refund policy"
+      response: "Our refund policy: broken items are refunded in full within 30 days."
+    - match: "how long will the refund take"
+      response: "Refunds land in 3-5 business days, Alex."
+
+cases:
+  - name: remembers the customer across turns
+    turns:
+      - prompt: "Hi, I'm Alex. My order #4821 arrived broken."
+        assertions:
+          - contains: "Alex"
+          - contains: "#4821"
+      - prompt: "What's my name again, and what's my order number?"
+        assertions:
+          - contains: "Alex"
+          - contains: "#4821"
+          - not_contains: "don't know"
+
+  - name: answers a follow-up consistently
+    turns:
+      - prompt: "What is your refund policy?"
+        assertions:
+          - contains: "refund"
+          - contains: "30 days"
+      - prompt: "And how long will the refund take?"
+        assertions:
+          - contains: "3-5 business days"

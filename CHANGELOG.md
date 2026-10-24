@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Multi-turn conversation suites: a case may define `turns` (each with its
+  own `prompt`, `assertions`, and optional `mock_response`) instead of
+  case-level `assertions`. The suite-level `prompt` becomes the system
+  message and every turn is sent with the full conversation history, so you
+  can test memory, persona consistency, and follow-up behaviour; assertions
+  are checked per turn and reports show per-turn detail in console, JSON,
+  and HTML output. `snapshot: true` / `--record` apply to the conversation's
+  final reply. New example `examples/multiturn.yaml`.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added

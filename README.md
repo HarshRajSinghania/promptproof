@@ -160,6 +160,32 @@ Templates support `{{variable}}` placeholders only — a suite is data, not
 code. A case may set `mock_response` to override the mock rules for that
 case. Suites can also be plain JSON (same structure).
 
+### Multi-turn conversations
+
+A case may define `turns` instead of top-level `assertions` to test a
+conversation: the suite-level `prompt` becomes the system message, and each
+turn's rendered prompt is sent as a user message with the full history
+attached — the model always sees the whole conversation. Assertions run per
+turn against that turn's reply, and the case passes only if every turn
+passes:
+
+```yaml
+cases:
+  - name: remembers the customer across turns
+    turns:
+      - prompt: "Hi, I'm Alex. My order #4821 arrived broken."
+        assertions:
+          - contains: "Alex"
+      - prompt: "What's my name again?"
+        assertions:
+          - contains: "Alex"
+```
+
+Turns support their own `mock_response` (the mock matches rules against
+each turn's user message). `snapshot: true` and `--record` apply to the
+conversation's final reply. See `examples/multiturn.yaml` for a runnable
+example (`promptproof run examples/multiturn.yaml --mock`).
+
 ## Assertions
 
 | Assertion      | Example                                   | Passes when…                                             |
@@ -231,6 +257,9 @@ spending tokens or requiring secrets from forks.
 
 - ~~Golden-file snapshots~~ — done: `snapshot: true` cases + `--record`
   writes `<suite-name>.golden.json`; later runs diff against it
+- ~~Multi-turn conversation suites~~ — done: case-level `turns` with
+  per-turn prompts/assertions; the suite prompt becomes the system message
+  and the model sees the full history (see `examples/multiturn.yaml`)
 - Multi-turn conversation suites
 - ~~Cost budgets per suite (`max_tokens` / `max_usd` gates)~~ — done:
   suite-level `pricing` + `limits` gates, cost estimate in every report

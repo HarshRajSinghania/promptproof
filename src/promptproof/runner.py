@@ -11,7 +11,7 @@ from .assertions import AssertionResult, check_assertions
 from .judge import LLMJudge
 from .providers import MockProvider, OpenAICompatibleProvider
 from .snapshots import default_snapshot_path, load_goldens, save_goldens
-from .suite import Suite
+from .suite import Case, Suite
 from .template import render_template
 
 Provider = Union[MockProvider, OpenAICompatibleProvider]
@@ -29,6 +29,8 @@ class CaseResult:
     completion_tokens: int = 0
     usage_estimated: bool = False
     error: str = ""
+    #: Per-turn results for multi-turn cases; empty for single-turn cases.
+    turns: list["CaseResult"] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
@@ -127,76 +129,190 @@ def run_suite(
     recorded: dict[str, str] = {}
     for case in suite.cases:
         started = time.perf_counter()
-        prompt = render_template(suite.prompt, case.vars)
-        try:
-            completion = provider.complete(prompt, case_mock_response=case.mock_response)
-        except Exception as exc:  # provider errors fail the case, not the run
-            report.cases.append(
-                CaseResult(
-                    name=case.name,
-                    passed=False,
-                    duration_ms=(time.perf_counter() - started) * 1000,
-                    prompt=prompt,
-                    response="",
-                    error=str(exc),
-                )
+        if case.turns:
+            result = _run_multi_turn(
+                case, suite, provider, judge, started, record=record, goldens=goldens
             )
-            continue
+        else:
+            result = _run_single_turn(
+                case, suite, provider, judge, started, record=record, goldens=goldens
+            )
+        report.cases.append(result)
         if record:
-            recorded[case.name] = completion.text
-            report.cases.append(
-                CaseResult(
-                    name=case.name,
-                    passed=True,
-                    duration_ms=(time.perf_counter() - started) * 1000,
-                    prompt=prompt,
-                    response=completion.text,
-                    prompt_tokens=completion.prompt_tokens,
-                    completion_tokens=completion.completion_tokens,
-                    usage_estimated=completion.usage_estimated,
-                )
-            )
-            continue
-        results = check_assertions(completion.text, case.assertions, judge=judge)
-        if case.snapshot:
-            golden = goldens.get(case.name)
-            if golden is None:
-                report.cases.append(
-                    CaseResult(
-                        name=case.name,
-                        passed=False,
-                        duration_ms=(time.perf_counter() - started) * 1000,
-                        prompt=prompt,
-                        response=completion.text,
-                        assertions=results,
-                        prompt_tokens=completion.prompt_tokens,
-                        completion_tokens=completion.completion_tokens,
-                        usage_estimated=completion.usage_estimated,
-                        error=(
-                            f"no golden snapshot for case {case.name!r}; "
-                            "run with --record to create it"
-                        ),
-                    )
-                )
-                continue
-            results.append(_check_snapshot(completion.text, golden))
-        report.cases.append(
-            CaseResult(
+            recorded[case.name] = result.response
+    if record:
+        save_goldens(snapshot_path(suite), recorded)
+    _apply_budgets(report, suite)
+    return report
+
+
+def _elapsed_ms(started: float) -> float:
+    return (time.perf_counter() - started) * 1000
+
+
+def _run_single_turn(
+    case: Case,
+    suite: Suite,
+    provider: Provider,
+    judge: LLMJudge,
+    started: float,
+    *,
+    record: bool,
+    goldens: dict[str, str],
+) -> CaseResult:
+    """Run a classic single-turn case."""
+    prompt = render_template(suite.prompt, case.vars)
+    try:
+        completion = provider.complete(prompt, case_mock_response=case.mock_response)
+    except Exception as exc:  # provider errors fail the case, not the run
+        return CaseResult(
+            name=case.name,
+            passed=False,
+            duration_ms=_elapsed_ms(started),
+            prompt=prompt,
+            response="",
+            error=str(exc),
+        )
+    if record:
+        return CaseResult(
+            name=case.name,
+            passed=True,
+            duration_ms=_elapsed_ms(started),
+            prompt=prompt,
+            response=completion.text,
+            prompt_tokens=completion.prompt_tokens,
+            completion_tokens=completion.completion_tokens,
+            usage_estimated=completion.usage_estimated,
+        )
+    results = check_assertions(completion.text, case.assertions, judge=judge)
+    if case.snapshot:
+        golden = goldens.get(case.name)
+        if golden is None:
+            return CaseResult(
                 name=case.name,
-                passed=all(r.passed for r in results),
-                duration_ms=(time.perf_counter() - started) * 1000,
+                passed=False,
+                duration_ms=_elapsed_ms(started),
                 prompt=prompt,
                 response=completion.text,
                 assertions=results,
                 prompt_tokens=completion.prompt_tokens,
                 completion_tokens=completion.completion_tokens,
                 usage_estimated=completion.usage_estimated,
+                error=(
+                    f"no golden snapshot for case {case.name!r}; "
+                    "run with --record to create it"
+                ),
             )
-        )
-    if record:
-        save_goldens(snapshot_path(suite), recorded)
-    _apply_budgets(report, suite)
-    return report
+        results.append(_check_snapshot(completion.text, golden))
+    return CaseResult(
+        name=case.name,
+        passed=all(r.passed for r in results),
+        duration_ms=_elapsed_ms(started),
+        prompt=prompt,
+        response=completion.text,
+        assertions=results,
+        prompt_tokens=completion.prompt_tokens,
+        completion_tokens=completion.completion_tokens,
+        usage_estimated=completion.usage_estimated,
+    )
+
+
+def _run_multi_turn(
+    case: Case,
+    suite: Suite,
+    provider: Provider,
+    judge: LLMJudge,
+    started: float,
+    *,
+    record: bool,
+    goldens: dict[str, str],
+) -> CaseResult:
+    """Run a multi-turn conversation case.
+
+    The suite-level prompt becomes the system message; each turn's rendered
+    prompt is sent as a user message and its reply is appended to the
+    history, so the model sees the whole conversation. Assertions run per
+    turn against that turn's reply; the case passes only if every turn
+    passes. ``snapshot: true`` and ``--record`` apply to the conversation's
+    final reply.
+    """
+    messages: list[dict[str, str]] = [{"role": "system", "content": suite.prompt}]
+    transcript = [f"system:\n{suite.prompt}"]
+    turn_results: list[CaseResult] = []
+    prompt_tokens = 0
+    completion_tokens = 0
+    usage_estimated = False
+    final_text = ""
+    error = ""
+    for turn_index, turn in enumerate(case.turns):
+        rendered = render_template(turn["prompt"], case.vars)
+        messages.append({"role": "user", "content": rendered})
+        transcript.append(f"user (turn {turn_index + 1}):\n{rendered}")
+        try:
+            completion = provider.complete_conversation(
+                messages,
+                case_mock_response=turn["mock_response"] or case.mock_response,
+            )
+        except Exception as exc:  # provider errors fail the case, not the run
+            error = str(exc)
+            break
+        messages.append({"role": "assistant", "content": completion.text})
+        transcript.append(f"assistant (turn {turn_index + 1}):\n{completion.text}")
+        prompt_tokens += completion.prompt_tokens
+        completion_tokens += completion.completion_tokens
+        usage_estimated = usage_estimated or completion.usage_estimated
+        final_text = completion.text
+        if record:
+            turn_result = CaseResult(
+                name=f"{case.name} · turn {turn_index + 1}",
+                passed=True,
+                duration_ms=0.0,
+                prompt=rendered,
+                response=completion.text,
+            )
+        else:
+            results = check_assertions(completion.text, turn["assertions"], judge=judge)
+            turn_result = CaseResult(
+                name=f"{case.name} · turn {turn_index + 1}",
+                passed=all(r.passed for r in results),
+                duration_ms=0.0,
+                prompt=rendered,
+                response=completion.text,
+                assertions=results,
+            )
+        turn_results.append(turn_result)
+    if not record and case.snapshot and not error:
+        golden = goldens.get(case.name)
+        if golden is None:
+            error = (
+                f"no golden snapshot for case {case.name!r}; "
+                "run with --record to create it"
+            )
+        elif final_text != golden:
+            turn_results.append(
+                CaseResult(
+                    name=f"{case.name} · snapshot",
+                    passed=False,
+                    duration_ms=0.0,
+                    prompt="",
+                    response=final_text,
+                    assertions=[_check_snapshot(final_text, golden)],
+                )
+            )
+    return CaseResult(
+        name=case.name,
+        passed=not error and bool(turn_results) and all(t.passed for t in turn_results),
+        duration_ms=_elapsed_ms(started),
+        prompt="\n\n".join(transcript),
+        response=final_text,
+        # Per-turn assertions live on the turns; the case-level list is the
+        # union only for single-turn cases, so reports read case.turns here.
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        usage_estimated=usage_estimated,
+        error=error,
+        turns=turn_results,
+    )
 
 
 def estimate_cost_usd(report: RunReport, suite: Suite) -> float:

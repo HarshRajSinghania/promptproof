@@ -35,6 +35,14 @@ def render_console(report: RunReport) -> str:
                 lines.append(f"    ⊘ {result.kind}: {result.detail}")
             elif not result.passed:
                 lines.append(f"    ✗ {result.kind}: {result.detail}")
+        for turn in case.turns:
+            turn_status = "PASS" if turn.passed else "FAIL"
+            lines.append(f"    turn — {turn.name}: {turn_status}")
+            for result in turn.assertions:
+                if result.skipped:
+                    lines.append(f"      ⊘ {result.kind}: {result.detail}")
+                elif not result.passed:
+                    lines.append(f"      ✗ {result.kind}: {result.detail}")
     lines.append("-" * len(header))
     usage_note = " (estimated)" if report.usage_estimated else ""
     lines.append(
@@ -87,6 +95,24 @@ def report_to_dict(report: RunReport) -> dict[str, Any]:
                     {"kind": r.kind, "passed": r.passed, "detail": r.detail, "skipped": r.skipped}
                     for r in case.assertions
                 ],
+                "turns": [
+                    {
+                        "name": turn.name,
+                        "passed": turn.passed,
+                        "prompt": turn.prompt,
+                        "response": turn.response,
+                        "assertions": [
+                            {
+                                "kind": r.kind,
+                                "passed": r.passed,
+                                "detail": r.detail,
+                                "skipped": r.skipped,
+                            }
+                            for r in turn.assertions
+                        ],
+                    }
+                    for turn in case.turns
+                ],
             }
             for case in report.cases
         ],
@@ -123,6 +149,9 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .error { color: #cf222e; font-size: 14px; margin: 8px 0 0; }
 .assertions { margin: 10px 0 0; padding: 0; list-style: none; font-size: 14px; }
 .assertions li { padding: 3px 0; }
+.turns { margin: 10px 0 0; padding: 0; list-style: none; }
+.turns > li { border-top: 1px solid #eee; padding: 10px 0; }
+.turns .assertions { margin-top: 6px; }
 .a-pass { color: #1a7f37; }
 .a-fail { color: #cf222e; }
 .a-skip { color: #9a6700; }
@@ -183,6 +212,34 @@ def render_html(report: RunReport) -> str:
                 "<details><summary>prompt &amp; response</summary>"
                 f"<h4>prompt</h4><pre>{esc(case.prompt)}</pre>"
                 f"<h4>response</h4><pre>{esc(case.response)}</pre></details>"
+            )
+        if case.turns:
+            turn_items = []
+            for turn in case.turns:
+                tstatus = "pass" if turn.passed else "fail"
+                tbadge = f'<span class="badge {tstatus}">{tstatus.upper()}</span>'
+                turn_assertions = []
+                for result in turn.assertions:
+                    if result.skipped:
+                        cls, mark = "a-skip", "⊘"
+                    elif result.passed:
+                        cls, mark = "a-pass", "✓"
+                    else:
+                        cls, mark = "a-fail", "✗"
+                    line = f'<span class="{cls}">{mark} {esc(result.kind)}</span>'
+                    if result.detail:
+                        line += f' <span class="detail">{esc(result.detail)}</span>'
+                    turn_assertions.append(f"<li>{line}</li>")
+                turn_items.append(
+                    f'<li>{tbadge} <strong>{esc(turn.name)}</strong>'
+                    f'<ul class="assertions">{"".join(turn_assertions)}</ul>'
+                    f"<details><summary>turn prompt &amp; reply</summary>"
+                    f"<h4>prompt</h4><pre>{esc(turn.prompt)}</pre>"
+                    f"<h4>reply</h4><pre>{esc(turn.response)}</pre></details></li>"
+                )
+            block.append(
+                "<details><summary>conversation turns</summary>"
+                f'<ul class="turns">{"".join(turn_items)}</ul></details>'
             )
         block.append("</section>")
         case_blocks.append("\n".join(block))
